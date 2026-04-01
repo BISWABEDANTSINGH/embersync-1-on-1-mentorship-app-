@@ -4,13 +4,13 @@ import { Server as SocketIOServer } from 'socket.io';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import materialRoutes from './routes/material';
-
-
-// Route & Socket Imports
+import { WebSocketServer } from 'ws';
+const { setupWSConnection } = require('y-websocket/bin/utils');// Route & Socket Imports
 import sessionRoutes from './routes/session';
 import { setupEditorSockets } from './sockets/editorHandler';
 import { setupChatSockets } from './sockets/chatHandler';
 import { setupWebRTCSockets } from './sockets/webrtcHandler';
+
 // Load environment variables
 dotenv.config();
 
@@ -38,7 +38,9 @@ app.get('/health', (req: Request, res: Response) => {
   res.status(200).json({ status: 'Platform Backend is running smoothly 🚀' });
 });
 
-// Initialize Socket.io
+// ==========================================
+// 1. SOCKET.IO SETUP (Chat, Signaling, Events)
+// ==========================================
 const io = new SocketIOServer(server, {
   cors: {
     origin: CLIENT_URL,
@@ -48,10 +50,10 @@ const io = new SocketIOServer(server, {
 
 // Top-level socket connection logging
 io.on('connection', (socket) => {
-  console.log(`[Socket Connected]: ${socket.id}`);
+  console.log(`[Socket.io Connected]: ${socket.id}`);
   
   socket.on('disconnect', () => {
-    console.log(`[Socket Disconnected]: ${socket.id}`);
+    console.log(`[Socket.io Disconnected]: ${socket.id}`);
   });
 });
 
@@ -59,10 +61,39 @@ io.on('connection', (socket) => {
 setupEditorSockets(io);
 setupChatSockets(io);
 setupWebRTCSockets(io); 
-// Start the server
+
+// ==========================================
+// 2. YJS CRDT SETUP (Real-time Code Sync)
+// ==========================================
+// Create a secondary WebSocket server specifically for Yjs CRDTs
+const wss = new WebSocketServer({ noServer: true });
+
+// Listen for connection upgrades on the main HTTP server
+server.on('upgrade', (request, socket, head) => {
+  // If the request is for our Yjs endpoint, handle it with the WS server
+  if (request.url?.startsWith('/yjs')) {
+    wss.handleUpgrade(request, socket, head, (ws) => {
+      wss.emit('connection', ws, request);
+    });
+  }
+  // Note: Socket.io automatically intercepts requests starting with /socket.io/
+  // so they will happily live side-by-side without conflicting!
+});
+
+// Pass the raw WebSocket connections to the Yjs document sync utility
+wss.on('connection', (ws, req) => {
+  console.log(`[Yjs CRDT Connected]: Client joined document sync`);
+  setupWSConnection(ws, req);
+});
+
+
+// ==========================================
+// START SERVER
+// ==========================================
 server.listen(PORT, () => {
   console.log(`=================================`);
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`🔌 Socket.io is actively listening`);
+  console.log(`🔌 Socket.io listening for events`);
+  console.log(`🧠 Yjs CRDT engine ready on /yjs`);
   console.log(`=================================`);
 });
