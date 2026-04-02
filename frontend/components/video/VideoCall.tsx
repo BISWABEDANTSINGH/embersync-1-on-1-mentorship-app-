@@ -23,37 +23,43 @@ export function VideoCall({ sessionId }: { sessionId: string }) {
   const [hasStarted, setHasStarted] = useState(false);
   const [deviceError, setDeviceError] = useState<string | null>(null);
 
-  // 1. Initialize User Media & WebRTC Connection
+  // 1. Initialize User Media & WebRTC Connection with Fallbacks
   const startCall = async () => {
     setHasStarted(true);
     setDeviceError(null);
     
-    try {
-      // Request both audio and video
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      localStreamRef.current = stream;
+    let stream: MediaStream | null = null;
 
+    try {
+      // Attempt 1: Try getting both Video and Audio
+      stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    } catch (error: any) {
+      console.warn("Camera/Mic access failed, attempting fallback...", error);
+      
+      try {
+        // Attempt 2: Camera might be locked or missing. Try getting JUST Audio.
+        stream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
+        setDeviceError("Camera in use/missing. Joined with Mic only.");
+        setIsVideoOn(false);
+      } catch (fallbackError: any) {
+        // Attempt 3: They have no mic or camera permissions at all. 
+        setDeviceError("No media access. Joining as viewer only.");
+        setIsVideoOn(false);
+        setIsMicOn(false);
+      }
+    }
+
+    // If we managed to get at least a mic or camera, attach it to the local video element
+    if (stream) {
+      localStreamRef.current = stream;
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream;
       }
-
-      // Tell the room we are ready to connect
-      socket.emit("user-ready-for-video", sessionId);
-    } catch (error: any) {
-      console.error("Error accessing media devices.", error);
-      
-      // Handle the "Requested device not found" gracefully
-      if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
-        setDeviceError("No camera or microphone found on this device.");
-      } else if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
-        setDeviceError("Camera/Mic access was denied by your browser.");
-      } else {
-        setDeviceError("Could not access media devices.");
-      }
-      
-      // We set hasStarted back to false so they see the join button + error message
-      setHasStarted(false); 
     }
+
+    // CRITICAL: ALWAYS tell the room we are ready to connect! 
+    // Even if we don't have a camera, we still want to receive the other person's video.
+    socket.emit("user-ready-for-video", sessionId);
   };
 
   // 2. Setup the RTCPeerConnection logic
