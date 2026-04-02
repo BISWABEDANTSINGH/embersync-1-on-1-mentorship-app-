@@ -7,7 +7,8 @@ import { socket } from "@/lib/socket";
 import Editor, { useMonaco } from "@monaco-editor/react";
 import * as Y from "yjs";
 import { WebsocketProvider } from "y-websocket";
-import type { MonacoBinding } from "y-monaco";import { 
+import type { MonacoBinding } from "y-monaco";
+import { 
   Loader2, LayoutPanelLeft, Code2, Users, Settings, MessageSquare, 
   PhoneCall, Send, Download, PowerOff, Copy, Check, Play, Terminal, ChevronDown, X, Shield, User, LogOut
 } from "lucide-react";
@@ -46,6 +47,9 @@ export default function SessionWorkspace() {
   const [isEnding, setIsEnding] = useState(false);
   const [copied, setCopied] = useState(false);
   const [activeLeftPanel, setActiveLeftPanel] = useState<"participants" | "layout" | "settings" | null>(null);
+
+  // Mobile UI States
+  const [showMobileComms, setShowMobileComms] = useState(false);
 
   // Execution & Language States
   const [language, setLanguage] = useState<keyof typeof SUPPORTED_LANGUAGES>("typescript");
@@ -105,20 +109,18 @@ export default function SessionWorkspace() {
         setLanguage(newLanguage);
       });
 
-socket.on("receive-message", (incomingMessage: ChatMessage) => {
+      socket.on("receive-message", (incomingMessage: ChatMessage) => {
         setMessages((prev) => {
           // BULLETPROOF ECHO FIX: 
-          // If the message came from US, ignore the server echo entirely!
-          // We use 'profile.id' because it is safely captured in this function's scope.
           if (incomingMessage.senderId === profile.id) {
             return prev; 
           }
 
-          // If it's a genuine message from the OTHER person, add it to the UI
           const safeId = incomingMessage.id || (Date.now().toString() + Math.random().toString());
           return [...prev, { ...incomingMessage, id: safeId }];
         });
       });
+      
       socket.on("session-ended", () => {
         alert("The mentor has ended this session. Downloading your code and returning to dashboard.");
         handleDownloadCode(); 
@@ -145,8 +147,7 @@ socket.on("receive-message", (incomingMessage: ChatMessage) => {
   }, [sessionId, router]);
 
   // CRDT MONACO BINDING
-// CRDT MONACO BINDING
-  const handleEditorDidMount = async (editor: any, monaco: any) => { // <-- Added 'async'
+  const handleEditorDidMount = async (editor: any, monaco: any) => { 
     editorRef.current = editor;
 
     if (!currentUser) return;
@@ -191,8 +192,7 @@ socket.on("receive-message", (incomingMessage: ChatMessage) => {
     isReceivingLanguage.current = false;
   };
 
-  // REAL PISTON API EXECUTION ENGINE
-// UNBREAKABLE IN-BROWSER EXECUTION ENGINE (No API Keys Required)
+  // UNBREAKABLE IN-BROWSER EXECUTION ENGINE (No API Keys Required)
   const handleRunCode = async () => {
     setIsRunning(true);
     setIsOutputOpen(true);
@@ -252,10 +252,8 @@ socket.on("receive-message", (incomingMessage: ChatMessage) => {
           
           setOutput(`${executionOutput}\n\n[Execution completed in 0.4s]`);
         } catch (err: any) {
-          // Catch and display real syntax or reference errors!
           setOutput(`Error:\n${err.message}`);
         } finally {
-          // ALWAYS restore the real console.log so we don't break the rest of the React app
           console.log = originalConsoleLog;
         }
 
@@ -267,7 +265,7 @@ socket.on("receive-message", (incomingMessage: ChatMessage) => {
     }, 600); // 600ms realistic delay
   };
 
-const handleSendMessage = (e: React.FormEvent) => {
+  const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMessage.trim() || !currentUser) return;
 
@@ -293,6 +291,7 @@ const handleSendMessage = (e: React.FormEvent) => {
 
     setNewMessage(""); 
   };
+
   const handleCopyLink = () => {
     navigator.clipboard.writeText(window.location.href);
     setCopied(true);
@@ -359,7 +358,7 @@ const handleSendMessage = (e: React.FormEvent) => {
     <div className="flex h-screen bg-[#0a0a0a] text-neutral-300 overflow-hidden font-sans selection:bg-orange-500/30">
       
       {/* LEFT SIDEBAR (Icon Menu) */}
-      <div className="w-16 bg-[#0f0f0f] border-r border-neutral-800 flex flex-col items-center py-6 gap-6 shrink-0 z-20 relative">
+      <div className="w-16 bg-[#0f0f0f] border-r border-neutral-800 flex flex-col items-center py-6 gap-6 shrink-0 z-20 relative hidden sm:flex">
         <div className="mb-4">
           <div className="w-8 h-8 flex items-center justify-center opacity-80">
             <svg viewBox="0 0 32 32" fill="none" className="w-full h-full">
@@ -424,7 +423,7 @@ const handleSendMessage = (e: React.FormEvent) => {
 
       {/* SLIDING LEFT PANEL */}
       {activeLeftPanel === "participants" && (
-        <div className="w-64 bg-[#0a0a0a] border-r border-neutral-800 flex flex-col shrink-0 z-10 animate-in slide-in-from-left-16 duration-300">
+        <div className="w-64 bg-[#0a0a0a] border-r border-neutral-800 flex flex-col shrink-0 z-10 animate-in slide-in-from-left-16 duration-300 absolute sm:relative h-full">
           <div className="h-14 border-b border-neutral-800 flex items-center justify-between px-5 shrink-0 bg-[#0f0f0f]">
             <h3 className="font-bold text-sm text-white flex items-center gap-2">
               Session Users
@@ -447,7 +446,7 @@ const handleSendMessage = (e: React.FormEvent) => {
                   </div>
                   
                   <div className="flex flex-col">
-                    <span className="text-xs font-bold text-neutral-200">
+                    <span className="text-xs font-bold text-neutral-200 truncate max-w-[120px]">
                       {p?.full_name} {p?.id === currentUser?.id && "(You)"}
                     </span>
                     <div className="flex items-center gap-1 mt-0.5">
@@ -473,8 +472,8 @@ const handleSendMessage = (e: React.FormEvent) => {
       {/* MIDDLE: THE MONACO EDITOR & TERMINAL */}
       <div className="flex-1 flex flex-col min-w-0 bg-[#0a0a0a]">
         
-        <div className="h-14 bg-[#0f0f0f] border-b border-neutral-800 flex items-center px-4 justify-between shrink-0">
-          <div className="flex items-center gap-3">
+        <div className="h-14 bg-[#0f0f0f] border-b border-neutral-800 flex items-center px-4 justify-between shrink-0 overflow-x-auto no-scrollbar">
+          <div className="flex items-center gap-3 shrink-0">
             <div className="relative flex items-center">
               <select 
                 value={language}
@@ -492,14 +491,14 @@ const handleSendMessage = (e: React.FormEvent) => {
             </span>
           </div>
           
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0 ml-2">
             <button 
               onClick={handleRunCode}
               disabled={isRunning}
               className="flex items-center gap-2 px-4 py-1.5 bg-green-500/10 hover:bg-green-500/20 border border-green-500/30 hover:border-green-500/50 rounded-lg text-xs font-bold text-green-500 transition-all shadow-inner disabled:opacity-50"
             >
               {isRunning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
-              {isRunning ? "Running..." : "Run Code"}
+              <span className="hidden sm:block">{isRunning ? "Running..." : "Run Code"}</span>
             </button>
 
             <button 
@@ -516,6 +515,15 @@ const handleSendMessage = (e: React.FormEvent) => {
               className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 rounded-lg text-xs font-bold text-neutral-300 transition-all hover:text-white"
             >
               <Download className="w-3.5 h-3.5" />
+            </button>
+
+            {/* MOBILE ONLY: Open Video/Chat Button */}
+            <button 
+              onClick={() => setShowMobileComms(true)}
+              className="md:hidden flex items-center gap-2 px-3 py-1.5 bg-orange-500/10 border border-orange-500/30 rounded-lg text-xs font-bold text-orange-500"
+            >
+              <PhoneCall className="w-3.5 h-3.5" />
+              <span>Chat</span>
             </button>
 
             {currentUser?.role === "mentor" && (
@@ -535,7 +543,7 @@ const handleSendMessage = (e: React.FormEvent) => {
                 className="flex items-center gap-2 px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 hover:border-neutral-600 rounded-lg text-xs font-bold text-neutral-300 transition-all shadow-inner"
               >
                 <LogOut className="w-3.5 h-3.5" />
-                <span className="hidden lg:block">Leave Session</span>
+                <span className="hidden lg:block">Leave</span>
               </button>
             )}
           </div>
@@ -547,16 +555,19 @@ const handleSendMessage = (e: React.FormEvent) => {
             width="100%"
             language={language}
             theme="vs-dark"
-            onMount={handleEditorDidMount} // CRDT Binding Hook
+            onMount={handleEditorDidMount}
             options={{
               minimap: { enabled: false },
-              fontSize: 15,
+              wordWrap: "on",         // Fixed for mobile!
+              folding: false,         // Fixed for mobile!
+              lineNumbersMinChars: 3, // Fixed for mobile!
+              fontSize: 14,
               fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-              padding: { top: 24 },
+              padding: { top: 16 },
               scrollBeyondLastLine: false,
               smoothScrolling: true,
               cursorBlinking: "smooth",
-              lineHeight: 1.6,
+              lineHeight: 1.5,
             }}
           />
         </div>
@@ -586,9 +597,25 @@ const handleSendMessage = (e: React.FormEvent) => {
 
       </div>
 
-      {/* RIGHT SIDEBAR: COMMUNICATION PANEL */}
-      <div className="w-80 bg-[#0f0f0f] border-l border-neutral-800 flex flex-col shrink-0 z-10">
+      {/* RIGHT SIDEBAR: COMMUNICATION PANEL (Responsive) */}
+      <div className={`
+        bg-[#0f0f0f] border-l border-neutral-800 flex-col z-50
+        ${showMobileComms ? "fixed inset-0 w-full flex" : "hidden md:flex w-80 shrink-0"}
+      `}>
         
+        {/* MOBILE ONLY: Close Button */}
+        {showMobileComms && (
+          <div className="h-14 bg-[#0a0a0a] border-b border-neutral-800 flex items-center justify-between px-4 md:hidden shrink-0">
+            <span className="text-xs font-bold text-white uppercase tracking-wider">Communication</span>
+            <button 
+              onClick={() => setShowMobileComms(false)} 
+              className="p-2 bg-neutral-900 rounded-lg text-neutral-400 hover:text-white transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        )}
+
         <VideoCall sessionId={sessionId} />
 
         <div className="flex-1 flex flex-col bg-[#0a0a0a] min-h-0">
